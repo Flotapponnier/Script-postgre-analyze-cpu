@@ -1,0 +1,35 @@
+[Unit]
+Description=PostgreSQL Activity Snapshot Service
+Documentation=https://www.postgresql.org/docs/current/monitoring-stats.html
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+
+# Environment variables for PostgreSQL connection
+Environment="PG_HOST=localhost"
+Environment="PG_PORT=5432"
+Environment="PG_USER=postgres"
+Environment="PG_DATABASE=postgres"
+Environment="PGPASSWORD="
+
+# Execute snapshot script
+ExecStart=/usr/local/bin/snapshot-pg-activity.sh
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/proc/loadavg
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pg-activity-snapshot
+
+[Install]
+WantedBy=multi-user.target

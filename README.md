@@ -1,52 +1,52 @@
 # PostgreSQL Activity Snapshot System
 
-Système de capture continue de `pg_stat_activity` pour analyse post-mortem des CPU bursts.
+Continuous capture of `pg_stat_activity` for post-mortem analysis of CPU bursts.
 
-## Objectif
+## Objective
 
-Capturer automatiquement les queries PostgreSQL toutes les 5 secondes pour analyser les incidents après coup.
+Automatically capture PostgreSQL queries every 5 seconds to analyze incidents after they occur.
 
 ## Architecture
 
 ```
-Serveur PostgreSQL
+PostgreSQL Server
     ↓
-systemd timer (toutes les 5s)
+systemd timer (every 5s)
     ↓
 snapshot-pg-activity.sh
     ↓
 INSERT INTO pg_activity_snapshots
     ↓
-Table PostgreSQL (retention 24h)
+PostgreSQL table (24h retention)
 ```
 
 ## Installation
 
 ```bash
-# 1. Créer la table PostgreSQL
+# 1. Create PostgreSQL table
 sudo -u postgres psql -d postgres -f setup-activity-snapshots.sql
 
-# 2. Installer le script
+# 2. Install script
 sudo cp snapshot-pg-activity.sh /usr/local/bin/
 sudo chmod +x /usr/local/bin/snapshot-pg-activity.sh
 
-# 3. Installer systemd timer
+# 3. Install systemd timer
 sudo cp pg-activity-snapshot.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now pg-activity-snapshot.timer
 ```
 
-## Utilisation
+## Usage
 
 ```bash
-# Analyser les 5 dernières minutes
+# Analyze last 5 minutes
 ./analyze-cpu-burst.sh
 
-# Analyser un moment précis
+# Analyze specific time
 ./analyze-cpu-burst.sh "2025-10-25 14:30"
 ```
 
-## Résultat
+## Output
 
 ```
 === Top Applications ===
@@ -60,7 +60,7 @@ IO/DataFileRead: 120 occurrences
 
 ## Performance
 
-- CPU: ~0.1% par snapshot
-- Storage: ~500 MB/jour (auto-nettoyé)
-- Fréquence: Toutes les 5s
+- CPU: ~0.1% per snapshot
+- Storage: ~500 MB/day (auto-cleaned)
+- Frequency: Every 5s
 # Script-postgre-analyze-cpu

@@ -1,0 +1,16 @@
+[Unit]
+Description=PostgreSQL Activity Snapshot Timer
+Documentation=https://www.postgresql.org/docs/current/monitoring-stats.html
+Requires=pg-activity-snapshot.service
+
+[Timer]
+# Run every 5 seconds
+OnBootSec=10s
+OnUnitActiveSec=5s
+
+# Don't accumulate missed runs
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
