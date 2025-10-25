@@ -68,12 +68,12 @@ echo "--- Top Queries by Frequency ---"
 psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DATABASE" -c "
 SELECT
     COUNT(*) as snapshot_count,
-    application_name,
+    LEFT(application_name, 40) as app_name,
     state,
-    wait_event_type,
-    wait_event,
-    ROUND(AVG(EXTRACT(EPOCH FROM (snapshot_time - query_start)))::numeric, 2) as avg_duration_sec,
-    LEFT(query, 150) as query_preview
+    COALESCE(wait_event_type, '') as wait_type,
+    COALESCE(wait_event, '') as wait_event,
+    ROUND(AVG(EXTRACT(EPOCH FROM (snapshot_time - query_start)))::numeric, 2) as avg_sec,
+    REGEXP_REPLACE(LEFT(query, 100), E'[\\n\\r\\t]+', ' ', 'g') as query_preview
 FROM public.pg_activity_snapshots
 WHERE $TIME_CONDITION
   AND state != 'idle'
@@ -107,13 +107,13 @@ echo "--- Long-Running Queries (>30s) ---"
 psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DATABASE" -c "
 SELECT DISTINCT ON (pid, query_start)
     pid,
-    application_name,
+    LEFT(application_name, 35) as app_name,
     query_start,
     ROUND(EXTRACT(EPOCH FROM (snapshot_time - query_start))::numeric, 2) as duration_sec,
     state,
-    wait_event_type,
-    wait_event,
-    LEFT(query, 200) as query_preview
+    COALESCE(wait_event_type, '') as wait_type,
+    COALESCE(wait_event, '') as wait_event,
+    REGEXP_REPLACE(LEFT(query, 120), E'[\\n\\r\\t]+', ' ', 'g') as query_preview
 FROM public.pg_activity_snapshots
 WHERE $TIME_CONDITION
   AND (snapshot_time - query_start) > INTERVAL '30 seconds'
