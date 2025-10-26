@@ -1,0 +1,18 @@
+# Datadog agent configuration for pg_activity_snapshot logs
+# Place this file in /etc/datadog-agent/conf.d/pg_activity_snapshot.d/conf.yaml
+
+logs:
+  # Collect from log file (most reliable method)
+  - type: file
+    path: /var/log/pg-activity-snapshots/snapshots.log
+    source: pg_activity_snapshot_postgres_prod_1
+    service: postgresql-replica
+    sourcecategory: database
+
+    # IMPORTANT: Tell Datadog this is JSON
+    # Each line is a complete JSON object
+    log_processing_rules:
+      # Parse as JSON automatically
+      - type: exclude_at_match
+        name: exclude_empty_lines
+        pattern: ^$

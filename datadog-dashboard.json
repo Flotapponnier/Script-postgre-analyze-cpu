@@ -1,0 +1,508 @@
+{
+  "title": "PostgreSQL CPU Burst Analysis - postgres-prod-1",
+  "description": "Monitoring pg_stat_activity snapshots (every 5s) to identify CPU bursts on postgres-prod-1 replica",
+  "widgets": [
+    {
+      "id": 1,
+      "definition": {
+        "title": "System Load Average",
+        "title_size": "16",
+        "title_align": "left",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": ["avg", "max", "value"],
+        "type": "timeseries",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "alias": "Load 1m",
+                "formula": "a"
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "avg",
+                  "metric": "@load_avg_1m"
+                },
+                "group_by": []
+              }
+            ],
+            "response_format": "timeseries",
+            "display_type": "line"
+          }
+        ],
+        "markers": [
+          {
+            "value": "y = 30",
+            "display_type": "warning dashed"
+          },
+          {
+            "value": "y = 50",
+            "display_type": "error dashed"
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 6,
+        "height": 3
+      }
+    },
+    {
+      "id": 2,
+      "definition": {
+        "title": "Active Query Count",
+        "title_size": "16",
+        "title_align": "left",
+        "show_legend": false,
+        "type": "timeseries",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "alias": "Active Queries",
+                "formula": "a"
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "avg",
+                  "metric": "@active_query_count"
+                },
+                "group_by": []
+              }
+            ],
+            "response_format": "timeseries",
+            "display_type": "line"
+          }
+        ],
+        "markers": [
+          {
+            "value": "y = 50",
+            "display_type": "warning dashed"
+          },
+          {
+            "value": "y = 100",
+            "display_type": "error dashed"
+          }
+        ]
+      },
+      "layout": {
+        "x": 6,
+        "y": 0,
+        "width": 6,
+        "height": 3
+      }
+    },
+    {
+      "id": 3,
+      "definition": {
+        "title": "Current Load (1m)",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "query_value",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "formula": "a"
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "avg",
+                  "metric": "@load_avg_1m"
+                },
+                "group_by": []
+              }
+            ],
+            "response_format": "scalar",
+            "conditional_formats": [
+              {
+                "comparator": ">",
+                "value": 50,
+                "palette": "white_on_red"
+              },
+              {
+                "comparator": ">",
+                "value": 30,
+                "palette": "white_on_yellow"
+              },
+              {
+                "comparator": "<=",
+                "value": 30,
+                "palette": "white_on_green"
+              }
+            ]
+          }
+        ],
+        "autoscale": true,
+        "precision": 1
+      },
+      "layout": {
+        "x": 0,
+        "y": 3,
+        "width": 3,
+        "height": 2
+      }
+    },
+    {
+      "id": 4,
+      "definition": {
+        "title": "Active Queries Now",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "query_value",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "formula": "a"
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "avg",
+                  "metric": "@active_query_count"
+                },
+                "group_by": []
+              }
+            ],
+            "response_format": "scalar",
+            "conditional_formats": [
+              {
+                "comparator": ">",
+                "value": 100,
+                "palette": "white_on_red"
+              },
+              {
+                "comparator": ">",
+                "value": 50,
+                "palette": "white_on_yellow"
+              },
+              {
+                "comparator": "<=",
+                "value": 50,
+                "palette": "white_on_green"
+              }
+            ]
+          }
+        ],
+        "autoscale": true,
+        "precision": 0
+      },
+      "layout": {
+        "x": 3,
+        "y": 3,
+        "width": 3,
+        "height": 2
+      }
+    },
+    {
+      "id": 5,
+      "definition": {
+        "title": "Peak Load (Last Hour)",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "query_value",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "formula": "a"
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "max",
+                  "metric": "@load_avg_1m"
+                },
+                "group_by": []
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ],
+        "autoscale": true,
+        "precision": 1
+      },
+      "layout": {
+        "x": 6,
+        "y": 3,
+        "width": 3,
+        "height": 2
+      }
+    },
+    {
+      "id": 6,
+      "definition": {
+        "title": "Peak Query Count",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "query_value",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "formula": "a"
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "max",
+                  "metric": "@active_query_count"
+                },
+                "group_by": []
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ],
+        "autoscale": true,
+        "precision": 0
+      },
+      "layout": {
+        "x": 9,
+        "y": 3,
+        "width": 3,
+        "height": 2
+      }
+    },
+    {
+      "id": 7,
+      "definition": {
+        "title": "Top Applications (by occurrence)",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "toplist",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "formula": "a",
+                "limit": {
+                  "count": 10,
+                  "order": "desc"
+                }
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "count"
+                },
+                "group_by": [
+                  {
+                    "facet": "@queries.application_name",
+                    "limit": 10,
+                    "sort": {
+                      "aggregation": "count",
+                      "order": "desc"
+                    }
+                  }
+                ]
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 5,
+        "width": 6,
+        "height": 3
+      }
+    },
+    {
+      "id": 8,
+      "definition": {
+        "title": "Top Wait Events",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "toplist",
+        "requests": [
+          {
+            "formulas": [
+              {
+                "formula": "a",
+                "limit": {
+                  "count": 10,
+                  "order": "desc"
+                }
+              }
+            ],
+            "queries": [
+              {
+                "data_source": "logs",
+                "name": "a",
+                "search": {
+                  "query": "source:pg_activity_snapshot_postgres_prod_1"
+                },
+                "indexes": ["*"],
+                "compute": {
+                  "aggregation": "count"
+                },
+                "group_by": [
+                  {
+                    "facet": "@queries.wait_event_type",
+                    "limit": 10,
+                    "sort": {
+                      "aggregation": "count",
+                      "order": "desc"
+                    }
+                  }
+                ]
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ]
+      },
+      "layout": {
+        "x": 6,
+        "y": 5,
+        "width": 6,
+        "height": 3
+      }
+    },
+    {
+      "id": 9,
+      "definition": {
+        "title": "High Load Events (>50 queries)",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "list_stream",
+        "requests": [
+          {
+            "columns": [
+              {
+                "field": "timestamp",
+                "width": "auto"
+              },
+              {
+                "field": "@load_avg_1m",
+                "width": "auto"
+              },
+              {
+                "field": "@active_query_count",
+                "width": "auto"
+              }
+            ],
+            "query": {
+              "data_source": "logs_stream",
+              "query_string": "source:pg_activity_snapshot_postgres_prod_1 @active_query_count:>50",
+              "indexes": [],
+              "storage": "hot"
+            },
+            "response_format": "event_list"
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 8,
+        "width": 12,
+        "height": 4
+      }
+    },
+    {
+      "id": 10,
+      "definition": {
+        "title": "Long Running Queries (>60s)",
+        "title_size": "16",
+        "title_align": "left",
+        "type": "list_stream",
+        "requests": [
+          {
+            "columns": [
+              {
+                "field": "timestamp",
+                "width": "auto"
+              },
+              {
+                "field": "@queries.application_name",
+                "width": "auto"
+              },
+              {
+                "field": "@queries.query_duration_sec",
+                "width": "auto"
+              },
+              {
+                "field": "@queries.wait_event_type",
+                "width": "auto"
+              }
+            ],
+            "query": {
+              "data_source": "logs_stream",
+              "query_string": "source:pg_activity_snapshot_postgres_prod_1 @queries.query_duration_sec:>60",
+              "indexes": [],
+              "storage": "hot"
+            },
+            "response_format": "event_list"
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 12,
+        "width": 12,
+        "height": 4
+      }
+    }
+  ],
+  "template_variables": [],
+  "layout_type": "ordered",
+  "notify_list": [],
+  "reflow_type": "fixed"
+}

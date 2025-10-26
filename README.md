@@ -1,246 +1,209 @@
-# PostgreSQL Activity Snapshot System
+# PostgreSQL CPU Burst Analysis (Datadog)
 
-Continuous capture of `pg_stat_activity` for post-mortem analysis of CPU bursts.
+Système de monitoring pour identifier les requêtes responsables des CPU bursts sur une replica PostgreSQL.
 
-## What does this do?
+## Problème résolu
 
-This system automatically takes a "snapshot" of all active PostgreSQL queries **every 5 seconds** and stores them in a table. When you have a CPU burst or incident, you can look back and see exactly which queries were running at that moment.
+**Avant** : CPU bursts sur la replica → impossible d'identifier les requêtes responsables car le burst est terminé quand tu te connectes.
 
-**Think of it like a black box for your database** - even if the problem only lasted 1 minute, you have a complete recording of what happened.
+**Maintenant** : Capture de `pg_stat_activity` toutes les 5 secondes → analyse post-mortem dans Datadog même des heures/jours après.
 
-## How it works
+## Architecture
 
 ```
-PostgreSQL Server
+PostgreSQL Replica (postgres-prod-1)
+    ↓ (toutes les 5 secondes)
+systemd timer exécute snapshot-pg-activity-datadog.sh
     ↓
-systemd timer runs every 5 seconds
+Capture: load average + pg_stat_activity (queries actives)
     ↓
-snapshot-pg-activity.sh captures:
-    - Load average (CPU usage)
-    - All active queries from pg_stat_activity
+Écrit JSON dans /var/log/pg-activity-snapshots/snapshots.log
     ↓
-INSERT INTO pg_activity_snapshots table
+Agent Datadog lit le fichier
     ↓
-Data kept for 24 hours (auto-cleaned)
+Datadog Logs + Dashboard
 ```
 
-**Example:**
-- 10:00:00 → Snapshot (load: 5.2, 12 active queries)
-- 10:00:05 → Snapshot (load: 5.4, 15 active queries)
-- 10:00:10 → Snapshot (load: 25.8, 45 active queries) ← Burst starts
-- 10:00:15 → Snapshot (load: 61.9, 102 active queries) ← Peak
-- 10:00:20 → Snapshot (load: 48.2, 85 active queries)
-- 10:00:25 → Snapshot (load: 12.1, 28 active queries) ← Burst ends
+## Installation
 
-Later, you can analyze what happened at 10:00:15 even if you check hours later.
-
-## Installation (on PostgreSQL server)
-
-**Run these commands on your PostgreSQL server:**
+### 1. Copier les fichiers sur le serveur
 
 ```bash
-# 1. Create the snapshot table in PostgreSQL
-sudo -u postgres psql -d postgres -f setup-activity-snapshots.sql
-
-# 2. Install the snapshot script
-sudo cp snapshot-pg-activity.sh /usr/local/bin/
-sudo chmod +x /usr/local/bin/snapshot-pg-activity.sh
-
-# 3. Install and start the systemd timer (runs every 5s automatically)
-sudo cp pg-activity-snapshot.{service,timer} /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now pg-activity-snapshot.timer
-
-# 4. Verify it's running
-sudo systemctl status pg-activity-snapshot.timer
+scp snapshot-pg-activity-datadog.sh \
+    pg-activity-snapshot-datadog.service \
+    pg-activity-snapshot-datadog.timer \
+    datadog-logs-config.yaml \
+    florent.tapponnier@35.240.242.47:/tmp/
 ```
 
-**What happens after installation:**
-- The systemd timer starts running in the background
-- Every 5 seconds, it captures pg_stat_activity and inserts it into the table
-- Data is automatically cleaned after 24 hours
-- You don't need to do anything - it runs automatically!
-
-## Checking if it's working
-
-**After installation, verify snapshots are being collected:**
+### 2. Installer sur le serveur
 
 ```bash
-# On the server, check snapshot count (should increase every 5s)
-sudo -u postgres psql -d postgres -c "
-SELECT COUNT(*), MIN(snapshot_time), MAX(snapshot_time)
-FROM pg_activity_snapshots;
-"
-
-# See recent snapshots with load average
-sudo -u postgres psql -d postgres -c "
-SELECT
-    snapshot_time,
-    load_avg_1m,
-    COUNT(*) as active_queries
-FROM pg_activity_snapshots
-WHERE snapshot_time >= NOW() - INTERVAL '1 minute'
-GROUP BY snapshot_time, load_avg_1m
-ORDER BY snapshot_time DESC;
-"
+ssh florent.tapponnier@35.240.242.47 'sudo mkdir -p /var/log/pg-activity-snapshots && \
+sudo chown postgres:postgres /var/log/pg-activity-snapshots && \
+sudo cp /tmp/snapshot-pg-activity-datadog.sh /usr/local/bin/ && \
+sudo chmod +x /usr/local/bin/snapshot-pg-activity-datadog.sh && \
+sudo cp /tmp/pg-activity-snapshot-datadog.{service,timer} /etc/systemd/system/ && \
+sudo mkdir -p /etc/datadog-agent/conf.d/pg_activity_snapshot.d && \
+sudo cp /tmp/datadog-logs-config.yaml /etc/datadog-agent/conf.d/pg_activity_snapshot.d/conf.yaml && \
+sudo systemctl daemon-reload && \
+sudo systemctl enable --now pg-activity-snapshot-datadog.timer && \
+sudo systemctl restart datadog-agent'
 ```
 
-**Expected output:**
-- You should see snapshots being added every 5 seconds
-- Each snapshot shows the load average and number of active queries at that moment
+### 3. Importer le dashboard Datadog
 
-## Analyzing CPU bursts
+1. Va sur https://app.datadoghq.com/dashboard/lists
+2. Clique **"New Dashboard"** → **"Import Dashboard JSON"**
+3. Copie-colle le contenu de `datadog-dashboard.json`
+4. Save
 
-**Scenario:** You got an alert about a CPU burst at 14:30. You want to know what caused it.
+## Ce qui est capturé (toutes les 5 secondes)
 
-### Option 1: Install analysis script on server (recommended)
+Pour chaque snapshot :
+- **System load** : `load_avg_1m`, `load_avg_5m`, `load_avg_15m`
+- **Active query count** : nombre total de requêtes actives
+- **Pour chaque requête active** :
+  - `application_name` : quelle app fait la requête
+  - `query_duration_sec` : depuis combien de temps la query tourne
+  - `wait_event_type` : pourquoi elle est bloquée (CPU, Lock, IO, etc.)
+  - `wait_event` : détail du wait event
+  - `query_preview` : le texte de la query (1000 premiers chars)
+
+## Dashboard Datadog
+
+Le dashboard inclut :
+- **Load Average** : graphique en temps réel avec seuils warning/critical
+- **Active Query Count** : nombre de requêtes actives
+- **Current Load & Queries** : valeurs actuelles avec code couleur
+- **Peak Load & Queries** : pics de la dernière heure
+- **Top Applications** : quelles apps font le plus de requêtes
+- **Top Wait Events** : pourquoi les requêtes sont bloquées (CPU/Lock/IO)
+- **High Load Events** : liste des moments avec >50 queries actives
+- **Long Running Queries** : queries qui durent >60 secondes
+
+## Utilisation - Analyser un CPU burst
+
+### Scénario : Alerte CPU burst à 14:30
+
+**Dans le dashboard Datadog** :
+
+1. Ouvre le dashboard "PostgreSQL CPU Burst Analysis"
+2. Zoom sur la période 14:28 - 14:33
+3. Regarde le graphique **Load Average** → tu vois le pic exact
+4. Regarde **Active Query Count** → combien de queries actives au pic
+5. Regarde **Top Applications** → quelle app est responsable
+6. Regarde **Top Wait Events** → pourquoi les queries étaient lentes
+7. Clique sur **High Load Events** → voir les snapshots exacts
+8. Clique sur un snapshot → voir les queries complètes avec leur texte
+
+**Dans Datadog Logs Explorer** :
+
+```
+# Tous les snapshots pendant le burst
+source:pg_activity_snapshot @timestamp:[2025-10-26T14:28:00 TO 2025-10-26T14:33:00]
+
+# Snapshots avec load > 35
+source:pg_activity_snapshot @load_avg_1m:>35
+
+# Snapshots avec beaucoup de queries
+source:pg_activity_snapshot @active_query_count:>50
+
+# Queries longues (>60s)
+source:pg_activity_snapshot @queries.query_duration_sec:>60
+
+# Lock contention
+source:pg_activity_snapshot @queries.wait_event_type:Lock
+
+# Application spécifique
+source:pg_activity_snapshot @queries.application_name:"stats-global-long*"
+```
+
+### Exemple d'analyse
+
+Tu vois dans le dashboard :
+- **Peak load : 62.1** à 14:29:10
+- **100 queries actives** au pic
+- **Top app : `holders-service-bnb`** (58 occurrences)
+- **Top wait event : Lock** (45 occurrences)
+
+→ **Conclusion** : `holders-service-bnb` fait trop de queries concurrentes qui se bloquent mutuellement sur des locks.
+
+→ **Action** : Optimiser les queries de `holders-service-bnb` ou réduire la concurrence.
+
+## Queries utiles dans Datadog
+
+```
+# Trouver tous les bursts de la journée
+source:pg_activity_snapshot @load_avg_1m:>40
+
+# Queries qui causent des lock waits
+source:pg_activity_snapshot @queries.wait_event_type:Lock @queries.application_name:*
+
+# Top applications pendant les bursts
+source:pg_activity_snapshot @load_avg_1m:>30 | top @queries.application_name
+
+# Timeline des wait events
+source:pg_activity_snapshot | timeseries count by @queries.wait_event_type
+```
+
+## Vérifier que le système fonctionne
 
 ```bash
-# Copy analysis script to server
-scp analyze-cpu-burst.sh user@your-server:/tmp/
-ssh user@your-server 'sudo cp /tmp/analyze-cpu-burst.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/analyze-cpu-burst.sh'
+# Status du timer systemd
+ssh florent.tapponnier@35.240.242.47 'sudo systemctl status pg-activity-snapshot-datadog.timer'
 
-# Then use it anytime
-ssh user@your-server '/usr/local/bin/analyze-cpu-burst.sh "2025-10-25 14:30"'
+# Nombre de snapshots capturés
+ssh florent.tapponnier@35.240.242.47 'sudo wc -l /var/log/pg-activity-snapshots/snapshots.log'
+
+# Dernier snapshot
+ssh florent.tapponnier@35.240.242.47 'sudo tail -1 /var/log/pg-activity-snapshots/snapshots.log | jq "{timestamp, load: .load_avg_1m, queries: .active_query_count}"'
+
+# Status agent Datadog
+ssh florent.tapponnier@35.240.242.47 'sudo datadog-agent status | grep -A 10 pg_activity_snapshot'
 ```
 
-### Option 2: Run from local machine via SSH
+Dans Datadog :
+```
+source:pg_activity_snapshot
+```
+→ Tu devrais voir des logs arriver toutes les 5 secondes.
+
+## Fichiers du projet
+
+**Utilisés en production** :
+- `snapshot-pg-activity-datadog.sh` : script de capture (installé dans `/usr/local/bin/`)
+- `pg-activity-snapshot-datadog.service` : service systemd
+- `pg-activity-snapshot-datadog.timer` : timer systemd (toutes les 5s)
+- `datadog-logs-config.yaml` : config agent Datadog pour collecter les logs
+- `datadog-dashboard.json` : dashboard Datadog à importer
+
+## Avantages de cette solution
+
+✅ **Fonctionne sur replica read-only** (pas de writes dans PostgreSQL)
+✅ **Granularité 5 secondes** (vs 1 minute pour Datadog DBM standard)
+✅ **Toutes les queries capturées** (pas d'échantillonnage)
+✅ **Corrélation system load + queries PostgreSQL**
+✅ **Retention 15+ jours** dans Datadog
+✅ **Dashboard visuel** pour analyse rapide
+✅ **Alerting possible** (monitor Datadog sur load > seuil)
+✅ **Backup local** dans `/var/log/pg-activity-snapshots/` si Datadog down
+
+## Performance
+
+- **CPU impact** : ~0.1% par snapshot (négligeable)
+- **Storage** : ~40 KB par snapshot → ~700 MB/jour
+- **Fréquence** : Toutes les 5 secondes
+- **Queries captées** : Max 100 queries par snapshot
+
+## Désinstallation (si besoin)
 
 ```bash
-# Analyze last 5 minutes
-ssh user@your-server 'bash -s' < analyze-cpu-burst.sh
-
-# Analyze specific time (e.g., when CPU burst happened)
-ssh user@your-server 'bash -s -- "2025-10-25 14:30"' < analyze-cpu-burst.sh
+ssh florent.tapponnier@35.240.242.47 'sudo systemctl stop pg-activity-snapshot-datadog.timer && \
+sudo systemctl disable pg-activity-snapshot-datadog.timer && \
+sudo rm /usr/local/bin/snapshot-pg-activity-datadog.sh && \
+sudo rm /etc/systemd/system/pg-activity-snapshot-datadog.{service,timer} && \
+sudo rm -rf /etc/datadog-agent/conf.d/pg_activity_snapshot.d && \
+sudo systemctl daemon-reload && \
+sudo systemctl restart datadog-agent'
 ```
-
-### Option 3: Manual SQL queries
-
-```bash
-# Connect to PostgreSQL and query directly
-ssh user@your-server "sudo -u postgres psql -d postgres -c \"
-SELECT
-    application_name,
-    COUNT(*) as snapshot_count,
-    AVG(EXTRACT(EPOCH FROM query_duration)) as avg_duration_sec
-FROM pg_activity_snapshots
-WHERE snapshot_time BETWEEN '14:28' AND '14:33'
-GROUP BY application_name
-ORDER BY snapshot_count DESC;
-\""
-```
-
-## What the analysis shows you
-
-When you run the analysis script, you get a complete report:
-
-```
-=== Load Average Summary ===
-avg_load_1m | max_load_1m | snapshot_count
-------------|-------------|---------------
-45.2        | 61.9        | 60
-
-→ Confirms there was a CPU burst (load peaked at 61.9)
-
-=== Top Applications ===
-application_name         | snapshot_count | avg_duration_sec
-------------------------|----------------|------------------
-update-wallet-positions | 320            | 45.2
-swap-handler            | 180            | 120.5
-
-→ Shows which apps ran the most queries during the burst
-
-=== Top Queries ===
-count | wait_event    | query_preview
-------|---------------|--------------------------------
-85    | LockManager   | UPDATE balances SET amount = ...
-60    | transactionid | INSERT INTO swaps (pool_id, ...)
-
-→ The actual queries that were running
-
-=== Wait Events ===
-wait_event_type | wait_event    | occurrences
-----------------|---------------|-------------
-Lock            | transactionid | 320
-IO              | DataFileRead  | 120
-
-→ Why queries were blocked (lock contention, I/O waits, etc.)
-
-=== Long-Running Queries ===
-pid   | duration_sec | query_preview
-------|--------------|---------------------------
-12345 | 46800        | VACUUM warehouse.balances_new
-67890 | 120          | UPDATE balances SET...
-
-→ Queries that were running for a long time
-```
-
-**From this report, you can immediately see:**
-- What caused the CPU burst (e.g., too many update-wallet-positions queries)
-- Why queries were slow (e.g., lock contention on transactionid)
-- What to optimize (e.g., reduce concurrent updates on balances table)
-
-## Performance Impact
-
-- **CPU**: ~0.1% per snapshot (negligible)
-- **Storage**: ~500 MB/day (auto-cleaned after 24h)
-- **Frequency**: Every 5 seconds
-- **Query impact**: None (only reads pg_stat_activity system view)
-
-## Troubleshooting
-
-### Check if timer is running
-
-```bash
-sudo systemctl status pg-activity-snapshot.timer
-```
-
-### View logs
-
-```bash
-sudo journalctl -u pg-activity-snapshot.service -n 50
-```
-
-### Stop/restart timer
-
-```bash
-# Stop
-sudo systemctl stop pg-activity-snapshot.timer
-
-# Start
-sudo systemctl start pg-activity-snapshot.timer
-```
-
-### Check table size
-
-```bash
-sudo -u postgres psql -d postgres -c "
-SELECT
-    pg_size_pretty(pg_total_relation_size('pg_activity_snapshots')) as size,
-    COUNT(*) as rows
-FROM pg_activity_snapshots;
-"
-```
-
-## Use Case Example
-
-**Problem:** CPU burst on replica at 14:30 causing replication lag
-
-**Without this system:**
-- At 14:35, you check `pg_stat_activity` → Nothing, burst is over ❌
-- No idea what caused it
-
-**With this system:**
-```bash
-# Run analysis (even hours later)
-./analyze-cpu-burst.sh "2025-10-25 14:30"
-
-# Result shows:
-# - update-wallet-positions: 85 queries with LockManager waits
-# - autovacuum running for 13 hours on balances_new
-# - 45 queries blocked on transaction locks
-
-# → Action: Optimize update-wallet-positions to reduce lock contention
-```
-
-✅ You can identify and fix the root cause

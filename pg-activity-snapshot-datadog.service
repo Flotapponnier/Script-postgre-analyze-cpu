@@ -1,0 +1,16 @@
+[Unit]
+Description=PostgreSQL Activity Snapshot to Datadog
+Documentation=https://www.postgresql.org/docs/current/monitoring-stats.html
+Documentation=https://docs.datadoghq.com/logs/
+
+[Service]
+Type=oneshot
+User=postgres
+ExecStart=/usr/local/bin/snapshot-pg-activity-datadog.sh
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
