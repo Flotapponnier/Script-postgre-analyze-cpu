@@ -13,7 +13,7 @@ PG_DATABASE="${PG_DATABASE:-postgres}"
 # Datadog log configuration
 DD_SERVICE="${DD_SERVICE:-postgresql-replica}"
 DD_ENV="${DD_ENV:-production}"
-DD_SOURCE="pg_activity_snapshot_postgres_prod_1"
+DD_SOURCE="pg_activity_snapshot_postgres_prod_0"
 
 # Capture load average from /proc/loadavg
 read -r LOAD_1M LOAD_5M LOAD_15M _ _ < /proc/loadavg

@@ -1,0 +1,27 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# JSON data files (snapshots)
+*-array.json
+*-full.json
+normal-*.json
+spike-*.json
+test-*.json
+pg_activity_*.json
+
+# Temporary files
+*.tmp
+*.log
+
+# Reports (optional - comment out if you want to track reports)
+report-*.md
+
+# macOS
+.DS_Store
